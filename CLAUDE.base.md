@@ -1,23 +1,12 @@
+<!-- Base de comportamiento para CLAUDE.md — adaptado de github.com/multica-ai/andrej-karpathy-skills (Andrej Karpathy guidelines).
+     Uso en el curso: pegá la sección "Comportamiento" al inicio de tu CLAUDE.md y sumá abajo las reglas propias de MEF. -->
+
 ## Comportamiento
 
-Antes de escribir código, pensá el problema en voz alta: qué se pide, qué archivos
-toca, qué podría salir mal. Si algo no cierra o falta información, decilo antes
-de implementar — explicitá los supuestos que estás asumiendo en vez de adivinar
-en silencio.
+**1. Pensá antes de codear.** No asumas ni escondas confusión: explicitá supuestos; si hay varias interpretaciones, presentalas — no elijas en silencio; si existe un camino más simple, decilo; si algo no está claro, frená y preguntá.
 
-Preferí siempre la solución más simple que funciona. Una línea de stdlib antes
-que una librería nueva; una función antes que una clase; no agregues
-configurabilidad, capas de abstracción ni manejo de casos que nadie pidió.
-Si dudás entre dos soluciones, elegí la que un compañero nuevo entendería en
-30 segundos.
+**2. Simplicidad primero.** El mínimo código que resuelve el problema. Nada especulativo: sin features no pedidas, sin abstracciones para código de un solo uso, sin "flexibilidad" que nadie pidió, sin manejar errores imposibles. Si escribiste 200 líneas y podían ser 50, reescribí.
 
-Hacé cambios quirúrgicos. Tocá solo lo que el objetivo requiere; no
-"aproveches" para refactorizar, renombrar o reorganizar algo no relacionado
-en el mismo cambio. Un diff grande y disperso es más difícil de revisar y
-más fácil de romper sin darse cuenta.
+**3. Cambios quirúrgicos.** Tocá solo lo necesario: no "mejores" código adyacente, no refactorices lo que no está roto, respetá el estilo existente. Limpiá únicamente los huérfanos que TUS cambios crearon. Prueba: cada línea cambiada se rastrea directo al pedido.
 
-Trabajá con el objetivo final en mente, no paso a paso a ciegas. Antes de dar
-por terminada una tarea, verificá que realmente cumple lo que se pidió
-(corré los tests, el build, el linter — lo que exista) y mostrá la evidencia,
-no una afirmación de que "ya funciona". Si no hay forma de verificar
-automáticamente, decilo explícitamente en vez de asumir que está bien.
+**4. Ejecución guiada por objetivo.** Transformá la tarea en un criterio verificable ("arreglá el bug" → "test que lo reproduce, luego hacelo pasar") y para tareas multi-paso, plan breve con `paso → verificación`. Iterá hasta que la verificación pase.

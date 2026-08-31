@@ -1,42 +1,48 @@
-## Comportamiento
+\## Comportamiento
 
-Antes de escribir código, pensá el problema en voz alta: qué se pide, qué archivos
-toca, qué podría salir mal. Si algo no cierra o falta información, decilo antes
-de implementar — explicitá los supuestos que estás asumiendo en vez de adivinar
-en silencio.
+\*\*1. Pensá antes de codear.\*\* No asumas ni escondas confusión: explicitá supuestos; si hay varias interpretaciones, presentalas — no elijas en silencio; si existe un camino más simple, decilo; si algo no está claro, frená y preguntá.
 
-Preferí siempre la solución más simple que funciona. Una línea de stdlib antes
-que una librería nueva; una función antes que una clase; no agregues
-configurabilidad, capas de abstracción ni manejo de casos que nadie pidió.
-Si dudás entre dos soluciones, elegí la que un compañero nuevo entendería en
-30 segundos.
+\*\*2. Simplicidad primero.\*\* El mínimo código que resuelve el problema. Nada especulativo: sin features no pedidas, sin abstracciones para código de un solo uso, sin "flexibilidad" que nadie pidió, sin manejar errores imposibles. Si escribiste 200 líneas y podían ser 50, reescribí.
 
-Hacé cambios quirúrgicos. Tocá solo lo que el objetivo requiere; no
-"aproveches" para refactorizar, renombrar o reorganizar algo no relacionado
-en el mismo cambio. Un diff grande y disperso es más difícil de revisar y
-más fácil de romper sin darse cuenta.
+\*\*3. Cambios quirúrgicos.\*\* Tocá solo lo necesario: no "mejores" código adyacente, no refactorices lo que no está roto, respetá el estilo existente. Limpiá únicamente los huérfanos que TUS cambios crearon. Prueba: cada línea cambiada se rastrea directo al pedido.
 
-Trabajá con el objetivo final en mente, no paso a paso a ciegas. Antes de dar
-por terminada una tarea, verificá que realmente cumple lo que se pidió
-(corré los tests, el build, el linter — lo que exista) y mostrá la evidencia,
-no una afirmación de que "ya funciona". Si no hay forma de verificar
-automáticamente, decilo explícitamente en vez de asumir que está bien.
+\*\*4. Ejecución guiada por objetivo.\*\* Transformá la tarea en un criterio verificable ("arreglá el bug" → "test que lo reproduce, luego hacelo pasar") y para tareas multi-paso, plan breve con `paso → verificación`. Iterá hasta que la verificación pase.
 
-# MEF · MentorIA Evaluación Formativa
 
-## Comandos
-- Instalar: `npm install` (workspaces)
-- Tests unitarios: `npm test -w packages/service` (Vitest; correr tests individuales, no toda la suite)
-- Evals: `npm run evals -w packages/evals`
-- Typecheck: `npm run typecheck` — SIEMPRE antes de dar por terminada una serie de cambios
 
-## Reglas duras
-- NUNCA enviar al modelo nombre, CURP, correo ni dato identificable de alumnos. Solo alias `A-NN`.
-- Toda llamada a Claude usa structured outputs con un schema en `packages/service/src/schemas/`.
-- El servicio NO accede a la base de datos de Red Magisterial: todo entra por `packages/service/src/db/repository.ts` (interfaz).
-- Modelos: Haiku 4.5 para retroalimentación por alumno; Sonnet 5 para brechas y ajuste. Nunca Opus en producto.
+\# MEF · MentorIA Evaluación Formativa
 
-## Convenciones
-- ES modules, TypeScript estricto, sin `any`.
-- Ramas `feat/<tema>`, commits en español imperativo, PR con sección "Cómo verificar".
-- Dominio NEM/PDA: ver skill `nem-pda` (no repetir aquí).
+
+
+\## Comandos
+
+\- Instalar: `npm install` (workspaces)
+
+\- Tests unitarios: `npm test -w packages/service` (Vitest; correr tests individuales, no toda la suite)
+
+\- Evals: `npm run evals -w packages/evals`
+
+\- Typecheck: `npm run typecheck` — SIEMPRE antes de dar por terminada una serie de cambios
+
+
+
+\## Reglas duras
+
+\- NUNCA enviar al modelo nombre, CURP, correo ni dato identificable de alumnos. Solo alias `A-NN`.
+
+\- Toda llamada a Claude usa structured outputs con un schema en `packages/service/src/schemas/`.
+
+\- El servicio NO accede a la base de datos de Red Magisterial: todo entra por `packages/service/src/db/repository.ts` (interfaz).
+
+\- Modelos: Haiku 4.5 para retroalimentación por alumno; Sonnet 5 para brechas y ajuste. Nunca Opus en producto.
+
+
+
+\## Convenciones
+
+\- ES modules, TypeScript estricto, sin `any`.
+
+\- Ramas `feat/<tema>`, commits en español imperativo, PR con sección "Cómo verificar".
+
+\- Dominio NEM/PDA: ver skill `nem-pda` (no repetir aquí).
+

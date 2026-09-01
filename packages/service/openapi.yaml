@@ -1,0 +1,374 @@
+openapi: 3.1.0
+info:
+  title: MEF — MentorIA Evaluación Formativa
+  version: 0.1.0
+  description: >
+    Servicio de retroalimentación formativa. Todo dato de alumno viaja
+    pseudonimizado como alias A-NN: nunca alumnoId real, nombre, CURP ni correo.
+
+
+    PENDIENTE (bloqueante para producción): `security: bearerAuth` está
+    DECLARADO PERO NO IMPLEMENTADO. El servicio todavía no valida el JWT de
+    redmagisterial ni verifica `grupoId ∈ grupoIds` (SPEC §7), así que hoy
+    cualquier llamante sin token puede leer y aprobar propuestas de cualquier
+    docente. Las respuestas 401/403 de este contrato no se emiten aún.
+    No desplegar sin el middleware de auth.
+servers:
+  - url: /v1
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Liveness / readiness
+      security: []
+      responses:
+        "200":
+          description: Servicio vivo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  estado: { type: string, enum: [ok] }
+
+  /retroalimentacion:
+    post:
+      summary: Encola la generación de retroalimentación para un lote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResultadoActividadInput" }
+      responses:
+        "202":
+          description: Job encolado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, estado]
+                properties:
+                  jobId: { type: string }
+                  estado: { type: string, enum: [encolado] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /retroalimentacion/{jobId}:
+    get:
+      summary: Progreso del job (destino del polling de la isla React)
+      parameters:
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: >
+            JobProgreso. Si estado = completado, incluye retroalimentaciones y brechas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JobProgreso"
+                  - type: object
+                    properties:
+                      retroalimentaciones:
+                        type: array
+                        items:
+                          { $ref: "#/components/schemas/Retroalimentacion" }
+                      brechas: { $ref: "#/components/schemas/AnalisisBrechas" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /retroalimentacion/{jobId}/alumnos/{alias}/reintentar:
+    post:
+      summary: Reintenta un alumno marcado requiereRevision, sin rehacer el lote
+      parameters:
+        - { name: jobId, in: path, required: true, schema: { type: string } }
+        - name: alias
+          in: path
+          required: true
+          schema: { type: string, pattern: "^A-\\d{2}$" }
+      responses:
+        "202":
+          description: Alumno reencolado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobProgreso" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /planeacion-ajuste/{actividadId}:
+    get:
+      summary: Propuesta de ajuste de la siguiente planeación
+      parameters:
+        - {
+            name: actividadId,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: Propuesta en su estado actual
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AjustePlaneacion" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /planeacion-ajuste/{id}/aprobar:
+    post:
+      summary: Aprueba la propuesta y registra auditoría. Nunca se auto-aplica.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        description: >
+          Ediciones del docente sobre el diff antes de aprobar. Si el diff
+          enviado difiere del almacenado, se registra
+          auditoria.editadoRespectoOriginal = true (SPEC §10).
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                diff:
+                  type: array
+                  items: { $ref: "#/components/schemas/DiffItem" }
+      responses:
+        "200":
+          description: Propuesta aprobada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AjustePlaneacion" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: >
+            ESTADO_INVALIDO - la propuesta ya está aprobada o descartada.
+            No se re-aprueba: pisaría el aprobadoEn original.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /planeacion-ajuste/{id}/descartar:
+    post:
+      summary: Descarta la propuesta
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Propuesta descartada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AjustePlaneacion" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: ESTADO_INVALIDO - la propuesta ya está aprobada o descartada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT emitido por el backend de redmagisterial (claims docenteId, escuelaId, grupoIds).
+        NO IMPLEMENTADO todavía: ver la nota PENDIENTE en info.description.
+
+  responses:
+    Error:
+      description: Error con forma única
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    Alias:
+      type: string
+      pattern: "^A-\\d{2}$"
+      description: Alias pseudonimizado. Nunca un identificador real de alumno.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message:
+              {
+                type: string,
+                description: Texto seguro para el docente,
+                sin PII.,
+              }
+            requestId: { type: string }
+
+    ResultadoAlumno:
+      type: object
+      required: [alias, presente]
+      properties:
+        alias: { $ref: "#/components/schemas/Alias" }
+        presente: { type: boolean }
+        scoreAgregado:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Requerido cuando presente = true.
+        flags:
+          type: array
+          items:
+            type: object
+            required: [tipo]
+            properties:
+              tipo: { type: string, enum: [atencion] }
+              nota: { type: string }
+        adecuacionCurricular:
+          type: object
+          required: [criterioAjustado]
+          properties:
+            criterioAjustado: { type: string }
+
+    ResultadoActividadInput:
+      type: object
+      required: [planeacionId, actividadId, grupoId, cicloEscolarId, resultados]
+      properties:
+        planeacionId: { type: string }
+        actividadId: { type: string }
+        grupoId: { type: string }
+        cicloEscolarId: { type: string }
+        resultados:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ResultadoAlumno" }
+
+    JobProgreso:
+      type: object
+      required: [jobId, estado, total, completados, requierenRevision]
+      properties:
+        jobId: { type: string }
+        estado:
+          { type: string, enum: [encolado, procesando, completado, error] }
+        total:
+          { type: integer, minimum: 0, description: Solo alumnos presentes. }
+        completados: { type: integer, minimum: 0 }
+        requierenRevision:
+          type: array
+          items: { $ref: "#/components/schemas/Alias" }
+
+    Retroalimentacion:
+      type: object
+      required: [alias, estado, adecuacionAplicada, intentos]
+      properties:
+        alias: { $ref: "#/components/schemas/Alias" }
+        estado: { type: string, enum: [generado, sinDatos, requiereRevision] }
+        retroalimentacion:
+          type: string
+          description: Ausente para sinDatos. Nunca se inventa texto para un alumno sin resultado.
+        pdaInferidos:
+          type: array
+          items:
+            type: object
+            required: [pda, nivel]
+            properties:
+              pda: { type: string }
+              nivel: { type: string, enum: [logrado, enProceso, noLogrado] }
+        adecuacionAplicada: { type: boolean }
+        intentos: { type: integer, minimum: 0 }
+
+    AnalisisBrechas:
+      type: object
+      required:
+        [
+          grupoId,
+          actividadId,
+          n,
+          nTotalGrupo,
+          datosInsuficientes,
+          umbralMinimoNParaCerteza,
+          brechas,
+        ]
+      properties:
+        grupoId: { type: string }
+        actividadId: { type: string }
+        n:
+          {
+            type: integer,
+            minimum: 0,
+            description: Alumnos con datos. Excluye ausentes.,
+          }
+        nTotalGrupo: { type: integer, minimum: 0 }
+        datosInsuficientes: { type: boolean }
+        umbralMinimoNParaCerteza: { type: integer, minimum: 1, default: 8 }
+        brechas:
+          type: array
+          items:
+            type: object
+            required: [pda, porcentajeNoLogrado, confianza]
+            properties:
+              pda: { type: string }
+              porcentajeNoLogrado: { type: number, minimum: 0, maximum: 100 }
+              confianza: { type: string, enum: [alta, baja] }
+        flagsSospecha:
+          type: array
+          items:
+            type: object
+            required: [alumnos, alcance, nota]
+            properties:
+              alumnos:
+                type: array
+                minItems: 1
+                items: { $ref: "#/components/schemas/Alias" }
+              alcance:
+                type: string
+                enum: [individual, grupoCompleto]
+                description: grupoCompleto sugiere falla del instrumento, no de los alumnos.
+              nota: { type: string }
+
+    MedSugerido:
+      type: object
+      required: [medId, titulo, fuente]
+      properties:
+        medId: { type: string }
+        titulo: { type: string }
+        fuente:
+          type: string
+          const: mcp-buscar_med
+          description: Anti-alucinación. Un MED solo puede venir de buscar_med.
+        url: { type: string, format: uri }
+
+    DiffItem:
+      type: object
+      required: [tipo, descripcion]
+      properties:
+        tipo: { type: string, enum: [agregar, modificar, mantener] }
+        descripcion: { type: string }
+        pdaRelacionado: { type: string }
+        medSugerido: { $ref: "#/components/schemas/MedSugerido" }
+
+    AjustePlaneacion:
+      type: object
+      required: [id, planeacionId, actividadId, estado, diff, auditoria]
+      properties:
+        id: { type: string }
+        planeacionId: { type: string }
+        actividadId: { type: string }
+        estado:
+          { type: string, enum: [borrador, revisado, aprobado, descartado] }
+        diff:
+          type: array
+          items: { $ref: "#/components/schemas/DiffItem" }
+        auditoria:
+          type: object
+          required: [creadoEn, editadoRespectoOriginal]
+          properties:
+            creadoEn: { type: string, format: date-time }
+            aprobadoPor: { type: string }
+            aprobadoEn: { type: string, format: date-time }
+            editadoRespectoOriginal:
+              type: boolean
+              description: Métrica de producto - tasa de edición (SPEC §10).

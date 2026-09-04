@@ -7,6 +7,7 @@ Este documento es autocontenido: describe alcance, arquitectura, contratos de da
 ## 1. Alcance
 
 ### Dentro de alcance (v1)
+
 - Captura de resultados de actividad por grupo (score agregado por alumno + flags puntuales de atención).
 - Generación de retroalimentación formativa individual por alumno, alineada a PDA.
 - Detección de brechas grupales por PDA, con matiz estadístico por tamaño de grupo.
@@ -16,6 +17,7 @@ Este documento es autocontenido: describe alcance, arquitectura, contratos de da
 - Auditoría de aprobación/edición de propuestas.
 
 ### Fuera de alcance (v1, explícito)
+
 - **Comunicación directa a padres/alumnos.** MEF solo produce artefactos para el docente; el envío de retroalimentación a alumnos o tutores queda para un módulo futuro.
 - **Calificación oficial / boleta.** MEF es una capa formativa, no sumativa. No escribe en el sistema de calificaciones oficiales.
 - **Detección de plagio/integridad académica como feature formal.** Solo existe un flag heurístico simple (respuestas idénticas entre alumnos); no se construye un sistema de detección robusto.
@@ -65,19 +67,20 @@ interface ResultadoActividadInput {
 }
 
 interface ResultadoAlumnoInput {
-  alumnoId: string;        // real; se tokeniza en el borde del servicio, nunca persiste tal cual
-  presente: boolean;       // false => excluido de feedback individual y de brechas grupales
-  scoreAgregado?: number;  // requerido si presente = true
+  alumnoId: string; // real; se tokeniza en el borde del servicio, nunca persiste tal cual
+  presente: boolean; // false => excluido de feedback individual y de brechas grupales
+  scoreAgregado?: number; // requerido si presente = true
   flags?: Array<{ tipo: "atencion"; nota?: string }>;
 }
 
 // Post-pseudonimización (lo único que ve Claude y lo que persiste MEF)
 interface ResultadoAlumnoPseudonimizado {
-  alias: string;            // "A-05"
+  alias: string; // "A-05"
   presente: boolean;
   scoreAgregado?: number;
   flags?: Array<{ tipo: "atencion"; nota?: string }>;
-  adecuacionCurricular?: {  // presente solo si MentorIA reporta adecuación para ese alumno
+  adecuacionCurricular?: {
+    // presente solo si MentorIA reporta adecuación para ese alumno
     criterioAjustado: string;
   };
 }
@@ -86,30 +89,30 @@ interface ResultadoAlumnoPseudonimizado {
 interface FeedbackAlumno {
   alias: string;
   estado: "generado" | "sinDatos" | "requiereRevision";
-  retroalimentacion?: string;              // texto formativo, editable por el docente en UI
+  retroalimentacion?: string; // texto formativo, editable por el docente en UI
   pdaInferidos?: Array<{
     pda: string;
     nivel: "logrado" | "enProceso" | "noLogrado";
   }>;
   adecuacionAplicada: boolean;
-  intentos: number;                         // para requiereRevision tras fallos repetidos
+  intentos: number; // para requiereRevision tras fallos repetidos
 }
 
 // Análisis grupal
 interface AnalisisBrechas {
   grupoId: string;
   actividadId: string;
-  n: number;                     // alumnos con datos (presente = true)
+  n: number; // alumnos con datos (presente = true)
   nTotalGrupo: number;
-  datosInsuficientes: boolean;   // true si falta > 30% del grupo (umbral configurable)
+  datosInsuficientes: boolean; // true si falta > 30% del grupo (umbral configurable)
   umbralMinimoNParaCerteza: number; // default 8
   brechas: Array<{
     pda: string;
     porcentajeNoLogrado: number;
-    confianza: "alta" | "baja";  // "baja" si n < umbralMinimoNParaCerteza
+    confianza: "alta" | "baja"; // "baja" si n < umbralMinimoNParaCerteza
   }>;
   flagsSospecha?: Array<{
-    alumnos: string[];                    // aliases involucrados
+    alumnos: string[]; // aliases involucrados
     alcance: "individual" | "grupoCompleto"; // grupoCompleto => posible falla del instrumento, no de alumnos
     nota: string;
   }>;
@@ -123,13 +126,13 @@ interface PropuestaAjustePlaneacion {
   estado: "borrador" | "revisado" | "aprobado" | "descartado";
   diff: Array<{
     tipo: "agregar" | "modificar" | "mantener";
-    descripcion: string;           // ej. "agregar actividad remedial de 20 min sobre F3.LEN.02.1"
+    descripcion: string; // ej. "agregar actividad remedial de 20 min sobre F3.LEN.02.1"
     pdaRelacionado?: string;
     medSugerido?: MedSugerido;
   }>;
   auditoria: {
     creadoEn: string;
-    aprobadoPor?: string;          // docenteId
+    aprobadoPor?: string; // docenteId
     aprobadoEn?: string;
     editadoRespectoOriginal: boolean; // métrica de calidad: tasa de edición
   };
@@ -138,7 +141,7 @@ interface PropuestaAjustePlaneacion {
 interface MedSugerido {
   medId: string;
   titulo: string;
-  fuente: "mcp-buscar_med";        // nunca "modelo" — anti-alucinación, ver §8
+  fuente: "mcp-buscar_med"; // nunca "modelo" — anti-alucinación, ver §8
   url?: string;
 }
 
@@ -148,7 +151,7 @@ interface JobProgreso {
   estado: "encolado" | "procesando" | "completado" | "error";
   total: number;
   completados: number;
-  requierenRevision: string[];      // aliases que fallaron 2x
+  requierenRevision: string[]; // aliases que fallaron 2x
 }
 ```
 
@@ -193,6 +196,7 @@ Un lote de resultados (ej. 30 alumnos) se procesa así:
 Restricción del proyecto: evals obligatorias antes de producción. Decisión de v1: **auditoría humana continua**, sin harness automatizado tipo LLM-judge en esta primera versión — evitar sobre-ingeniería antes de tener volumen real de uso.
 
 Mínimo no negociable:
+
 - Antes de habilitar el módulo para un grupo de docentes piloto, un conjunto curado de muestras (resultados reales o sintéticos representativos) pasa por revisión humana pedagógica antes de considerar el prompt "listo".
 - En producción, muestreo recurrente (ej. X% de propuestas por semana) revisado por alguien del equipo pedagógico.
 - La **tasa de edición** de propuestas (aprobado sin cambios vs. editado antes de aprobar, ver `auditoria.editadoRespectoOriginal`) se trackea como métrica de producto: si el docente aprueba ~100% sin editar, es señal de aprobación automática sin lectura, y dispara rediseño de la UI de revisión — no es solo una métrica de calidad del modelo, es una señal de riesgo de sobreconfianza (§11).
@@ -201,12 +205,12 @@ Mínimo no negociable:
 
 ## 11. Riesgos y mitigaciones
 
-| Riesgo | Mitigación |
-|---|---|
-| Sobreconfianza docente / reemplazo de juicio pedagógico | Todo output (feedback individual, brechas, ajuste de planeación) se presenta como propuesta editable con estados `borrador → revisado → aprobado`, nunca como veredicto final. Tasa de edición trackeada (§10). |
-| Alucinación de MED inexistente | `medSugerido` solo desde resultados reales de `buscar_med` (§8); nunca inventado. |
+| Riesgo                                                          | Mitigación                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sobreconfianza docente / reemplazo de juicio pedagógico         | Todo output (feedback individual, brechas, ajuste de planeación) se presenta como propuesta editable con estados `borrador → revisado → aprobado`, nunca como veredicto final. Tasa de edición trackeada (§10).                                          |
+| Alucinación de MED inexistente                                  | `medSugerido` solo desde resultados reales de `buscar_med` (§8); nunca inventado.                                                                                                                                                                        |
 | Exposición de PII de menores fuera del perímetro pseudonimizado | Auditoría explícita de cada punto de logging (app, MCP, Claude, error tracking); solo el alias se registra. Se prueba intentando loggear un dato real y verificando que quede bloqueado también en logs, no solo en el código fuente que arma el prompt. |
-| Sesgo por bajo N (grupos pequeños/escuelas rurales) | Umbral `n ≥ 8` antes de reportar brecha con lenguaje de certeza; por debajo, se reporta con `confianza: "baja"` y lenguaje cauteloso, nunca se omite (§6). |
+| Sesgo por bajo N (grupos pequeños/escuelas rurales)             | Umbral `n ≥ 8` antes de reportar brecha con lenguaje de certeza; por debajo, se reporta con `confianza: "baja"` y lenguaje cauteloso, nunca se omite (§6).                                                                                               |
 
 ## 12. Dependencias / preguntas abiertas
 
@@ -271,15 +275,15 @@ docs/
 
 ## 14. Contrato de API (resumen)
 
-| Endpoint | Método | Descripción |
-|---|---|---|
-| `/v1/retroalimentacion` | POST | Recibe `ResultadoActividadInput`, tokeniza, encola job. Devuelve `{ jobId, estado }`. |
-| `/v1/retroalimentacion/{jobId}` | GET | Devuelve `JobProgreso`; si `completado`, incluye `FeedbackAlumno[]` y `AnalisisBrechas`. |
-| `/v1/retroalimentacion/{jobId}/alumnos/{alias}/reintentar` | POST | Reintenta un alumno puntual marcado `requiereRevision`. |
-| `/v1/planeacion-ajuste/{actividadId}` | GET | Devuelve `PropuestaAjustePlaneacion` en su estado actual. |
-| `/v1/planeacion-ajuste/{id}/aprobar` | POST | Body opcional con ediciones; marca `aprobado`, registra auditoría. |
-| `/v1/planeacion-ajuste/{id}/descartar` | POST | Marca `descartado`. |
-| `/v1/health` | GET | Liveness/readiness. |
+| Endpoint                                                   | Método | Descripción                                                                              |
+| ---------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `/v1/retroalimentacion`                                    | POST   | Recibe `ResultadoActividadInput`, tokeniza, encola job. Devuelve `{ jobId, estado }`.    |
+| `/v1/retroalimentacion/{jobId}`                            | GET    | Devuelve `JobProgreso`; si `completado`, incluye `FeedbackAlumno[]` y `AnalisisBrechas`. |
+| `/v1/retroalimentacion/{jobId}/alumnos/{alias}/reintentar` | POST   | Reintenta un alumno puntual marcado `requiereRevision`.                                  |
+| `/v1/planeacion-ajuste/{actividadId}`                      | GET    | Devuelve `PropuestaAjustePlaneacion` en su estado actual.                                |
+| `/v1/planeacion-ajuste/{id}/aprobar`                       | POST   | Body opcional con ediciones; marca `aprobado`, registra auditoría.                       |
+| `/v1/planeacion-ajuste/{id}/descartar`                     | POST   | Marca `descartado`.                                                                      |
+| `/v1/health`                                               | GET    | Liveness/readiness.                                                                      |
 
 Todos los endpoints (excepto `/health`) requieren `Authorization: Bearer <JWT>` y aplican la verificación de `grupoId ∈ grupoIds` (§7). El contrato completo vive en `packages/mef-service/src/openapi/mef.openapi.yaml`.
 
@@ -308,23 +312,23 @@ Convención única para todo error que cruce un límite del servicio (HTTP, Clau
 
 ### 16.1 Taxonomía y códigos HTTP
 
-| Categoría | HTTP | Ejemplo | Retryable por cliente |
-|---|---|---|---|
-| Input inválido (Zod) | 400 | `resultados[]` vacío, `scoreAgregado` faltante con `presente: true` | No — corregir input |
-| Auth ausente/inválida | 401 | JWT expirado o firma inválida | No — reautenticar |
-| Autorización insuficiente | 403 | `grupoId` fuera de `grupoIds` del token (§7) | No |
-| Recurso no encontrado | 404 | `jobId` o `id` de propuesta inexistente | No |
-| Fallo de dependencia externa | 502 | Claude o `buscar_med` no responde / responde inválido | Sí, con backoff (ver 16.3) |
-| Error interno no clasificado | 500 | Excepción no prevista | No — reportar `requestId` |
+| Categoría                    | HTTP | Ejemplo                                                             | Retryable por cliente      |
+| ---------------------------- | ---- | ------------------------------------------------------------------- | -------------------------- |
+| Input inválido (Zod)         | 400  | `resultados[]` vacío, `scoreAgregado` faltante con `presente: true` | No — corregir input        |
+| Auth ausente/inválida        | 401  | JWT expirado o firma inválida                                       | No — reautenticar          |
+| Autorización insuficiente    | 403  | `grupoId` fuera de `grupoIds` del token (§7)                        | No                         |
+| Recurso no encontrado        | 404  | `jobId` o `id` de propuesta inexistente                             | No                         |
+| Fallo de dependencia externa | 502  | Claude o `buscar_med` no responde / responde inválido               | Sí, con backoff (ver 16.3) |
+| Error interno no clasificado | 500  | Excepción no prevista                                               | No — reportar `requestId`  |
 
 Todo error HTTP responde con la misma forma, sin excepción:
 
 ```ts
 interface ErrorResponse {
   error: {
-    code: string;        // "INPUT_INVALIDO" | "NO_AUTORIZADO" | "DEPENDENCIA_EXTERNA" | ...
-    message: string;      // texto seguro para mostrar al docente, sin PII ni detalle interno
-    requestId: string;    // para correlacionar con logs
+    code: string; // "INPUT_INVALIDO" | "NO_AUTORIZADO" | "DEPENDENCIA_EXTERNA" | ...
+    message: string; // texto seguro para mostrar al docente, sin PII ni detalle interno
+    requestId: string; // para correlacionar con logs
   };
 }
 ```

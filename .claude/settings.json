@@ -1,16 +1,32 @@
 {
   "permissions": {
-    "allow": ["Bash(npm test*)", "Bash(npm run typecheck*)", "Bash(git status*)", "Bash(git diff*)"],
+    "allow": [
+      "Bash(npm test*)",
+      "Bash(npm run typecheck*)",
+      "Bash(git status*)",
+      "Bash(git diff*)"
+    ],
     "deny": ["Read(./.env)", "Read(./**/*.pem)", "Bash(curl *)"]
   },
   "hooks": {
-    "PostToolUse": [{
-      "matcher": "Edit|Write",
-      "hooks": [{ "type": "command", "command": "npx prettier --write \"$CLAUDE_FILE_PATH\" 2>/dev/null || true" }]
-    }],
-    "PreToolUse": [{
-      "matcher": "Write|Edit",
-      "hooks": [{ "type": "command", "command": "node .claude/hooks/block-pii.mjs" }]
-    }]
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx prettier --write \"$CLAUDE_FILE_PATH\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/block-pii.mjs" }
+        ]
+      }
+    ]
   }
 }

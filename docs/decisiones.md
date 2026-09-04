@@ -218,3 +218,65 @@ resolverlas:
 Fuera de esas, el siguiente trabajo desbloqueante es el worker: sin él,
 `estado: "completado"` es inalcanzable y tres de los cinco componentes de §13 no
 tienen datos que mostrar.
+
+## ADR: alcance real del hook `block-pii`
+
+**Fecha:** 2026-09-03
+
+`.claude/hooks/block-pii.mjs` bloquea CURP, correo y nombres **etiquetados**
+(claves `"nombre"`, `"apellido"`, `"nombre_completo"` con valor no vacío).
+
+**Techo conocido:** un nombre propio suelto en prosa —
+`"Juan reprobó la actividad"`— no es detectable de forma confiable con regex ni
+heurísticas simples, y pasa el hook sin bloqueo. Distinguir un nombre de alumno
+de cualquier otro sustantivo propio requeriría NER, con falsos positivos sobre
+autores, lugares y términos del currículo NEM.
+
+**Consecuencia:** el hook es una red de seguridad para el caso frecuente
+(fixtures, JSON pegado, exportes de la base), **no** una garantía de que no haya
+PII en el contenido. La regla dura de `CLAUDE.md` —solo alias `A-NN`— sigue
+siendo responsabilidad de quien escribe el código y del revisor, no del hook.
+
+**Alternativa descartada:** NER local o llamada a modelo para clasificar PII.
+Costo y latencia en cada `Write`/`Edit` no se justifican para un hook de
+pre-commit; se reconsidera si aparece una fuga real en producción.
+
+---
+
+## ADR-005 — `Repository` como interfaz con implementación SQLite en memoria
+
+**Fecha:** 2026-09-03
+
+**Contexto:** la regla dura de `CLAUDE.md` prohíbe que MEF acceda a la base de
+Red Magisterial; los datos reales (planeaciones, resultados) viven en un sistema
+que este repo no controla ni puede levantar en dev ni en CI.
+
+**Decisión:** `packages/service/src/db/repository.ts` define solo la interfaz
+`Repository` —la única costura hacia cualquier almacenamiento— y `sqlite.ts` la
+implementa con datos mock; la integración real con Red Magisterial será otra
+implementación de la misma interfaz, sin tocar handlers ni schemas.
+
+**Consecuencia:** el servicio, los tests y las evals corren sin credenciales ni
+red, y el acoplamiento a la base queda confinado a un archivo; el costo es que
+la interfaz tiene hoy una sola implementación, aceptado porque su razón de ser
+es la regla de aislamiento, no la flexibilidad especulativa.
+
+---
+
+## ADR-006 — El contrato del servicio es OpenAPI
+
+**Fecha:** 2026-09-03
+
+**Contexto:** MEF lo consume MentorIA/Red Magisterial y `packages/ui`, con
+frontend y backend avanzando en paralelo (ADR-001 a ADR-004); sin un contrato
+externo al código, cada ronda de coordinación tendría que leer los handlers para
+saber qué se responde.
+
+**Decisión:** el contrato vive en `openapi.yaml`, versionado en el repo y
+revisable en el PR, como fuente única de rutas, shapes y taxonomía de errores
+(`SPEC.md` §16.1); los schemas Zod siguen siendo la validación en runtime.
+
+**Consecuencia:** los consumidores integran contra un documento estable y las
+divergencias contrato/código se vuelven hallazgos citables (auth declarada y no
+implementada, `ref` ambiguo en ADR-001); el costo es mantener dos fuentes —YAML
+y Zod— que hay que revisar juntas en cada cambio de endpoint.

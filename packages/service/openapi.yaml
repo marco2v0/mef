@@ -78,6 +78,7 @@ paths:
                         items:
                           { $ref: "#/components/schemas/Retroalimentacion" }
                       brechas: { $ref: "#/components/schemas/AnalisisBrechas" }
+                      ajuste: { $ref: "#/components/schemas/AjustePlaneacion" }
         "404": { $ref: "#/components/responses/Error" }
 
   /retroalimentacion/{jobId}/alumnos/{alias}/reintentar:
@@ -123,17 +124,20 @@ paths:
       requestBody:
         required: false
         description: >
-          Ediciones del docente sobre el diff antes de aprobar. Si el diff
-          enviado difiere del almacenado, se registra
-          auditoria.editadoRespectoOriginal = true (SPEC §10).
+          Ediciones del docente antes de aprobar. Si lo enviado difiere de lo
+          almacenado, se registra auditoria.editadoRespectoOriginal = true
+          (SPEC §10).
         content:
           application/json:
             schema:
               type: object
               properties:
-                diff:
+                cambiosSecuencia:
                   type: array
-                  items: { $ref: "#/components/schemas/DiffItem" }
+                  items: { $ref: "#/components/schemas/CambioSecuencia" }
+                medSugeridos:
+                  type: array
+                  items: { $ref: "#/components/schemas/MedSugerido" }
       responses:
         "200":
           description: Propuesta aprobada
@@ -261,24 +265,53 @@ components:
           items: { $ref: "#/components/schemas/Alias" }
 
     Retroalimentacion:
+      description: >
+        Una entrada por alumno del lote. Los ausentes aparecen con estado
+        sinDatos y sin texto: no se les genera retroalimentación.
+      oneOf:
+        - $ref: "#/components/schemas/RetroalimentacionGenerada"
+        - $ref: "#/components/schemas/RetroalimentacionSinDatos"
+      discriminator:
+        propertyName: estado
+        mapping:
+          generado: "#/components/schemas/RetroalimentacionGenerada"
+          sinDatos: "#/components/schemas/RetroalimentacionSinDatos"
+
+    RetroalimentacionSinDatos:
       type: object
-      required: [alias, estado, adecuacionAplicada, intentos]
+      required: [alias, estado]
       properties:
         alias: { $ref: "#/components/schemas/Alias" }
-        estado: { type: string, enum: [generado, sinDatos, requiereRevision] }
-        retroalimentacion:
-          type: string
-          description: Ausente para sinDatos. Nunca se inventa texto para un alumno sin resultado.
-        pdaInferidos:
+        estado: { type: string, enum: [sinDatos] }
+
+    RetroalimentacionGenerada:
+      type: object
+      required:
+        [
+          alias,
+          estado,
+          pdaReferidos,
+          logros,
+          brecha,
+          siguientePaso,
+          texto,
+          requiereRevision,
+        ]
+      properties:
+        alias: { $ref: "#/components/schemas/Alias" }
+        estado: { type: string, enum: [generado] }
+        pdaReferidos:
           type: array
-          items:
-            type: object
-            required: [pda, nivel]
-            properties:
-              pda: { type: string }
-              nivel: { type: string, enum: [logrado, enProceso, noLogrado] }
-        adecuacionAplicada: { type: boolean }
-        intentos: { type: integer, minimum: 0 }
+          minItems: 1
+          items: { type: string }
+          description: Ids de PDA de la planeación; validados en el servicio.
+        logros: { type: string }
+        brecha: { type: string }
+        siguientePaso: { type: string }
+        texto: { type: string, description: Máximo 120 palabras. }
+        requiereRevision:
+          type: boolean
+          description: true si el modelo citó PDA ajenos a la planeación incluso tras el reintento.
 
     AnalisisBrechas:
       type: object
@@ -290,7 +323,10 @@ components:
           nTotalGrupo,
           datosInsuficientes,
           umbralMinimoNParaCerteza,
-          brechas,
+          confianza,
+          pdaNoLogrados,
+          fortalezas,
+          recomendacionGeneral,
         ]
       properties:
         grupoId: { type: string }
@@ -304,15 +340,27 @@ components:
         nTotalGrupo: { type: integer, minimum: 0 }
         datosInsuficientes: { type: boolean }
         umbralMinimoNParaCerteza: { type: integer, minimum: 1, default: 8 }
-        brechas:
+        confianza:
+          type: string
+          enum: [alta, baja]
+          description: baja cuando n < umbralMinimoNParaCerteza.
+        pdaNoLogrados:
           type: array
           items:
             type: object
-            required: [pda, porcentajeNoLogrado, confianza]
+            required: [pda, porcentaje, patron]
             properties:
               pda: { type: string }
-              porcentajeNoLogrado: { type: number, minimum: 0, maximum: 100 }
-              confianza: { type: string, enum: [alta, baja] }
+              porcentaje:
+                type: number
+                minimum: 0
+                maximum: 100
+                description: Sobre los n alumnos con datos, no sobre el grupo.
+              patron: { type: string }
+        fortalezas:
+          type: array
+          items: { type: string }
+        recomendacionGeneral: { type: string }
         flagsSospecha:
           type: array
           items:
@@ -341,27 +389,49 @@ components:
           description: Anti-alucinación. Un MED solo puede venir de buscar_med.
         url: { type: string, format: uri }
 
-    DiffItem:
+    CambioSecuencia:
       type: object
       required: [tipo, descripcion]
       properties:
         tipo: { type: string, enum: [agregar, modificar, mantener] }
         descripcion: { type: string }
         pdaRelacionado: { type: string }
-        medSugerido: { $ref: "#/components/schemas/MedSugerido" }
+
+    ActividadRemedial:
+      type: object
+      required: [descripcion, duracionMin, pdaObjetivo]
+      properties:
+        descripcion: { type: string }
+        duracionMin: { type: integer, minimum: 1 }
+        pdaObjetivo: { type: string }
 
     AjustePlaneacion:
       type: object
-      required: [id, planeacionId, actividadId, estado, diff, auditoria]
+      required:
+        [
+          id,
+          planeacionId,
+          actividadId,
+          estado,
+          cambiosSecuencia,
+          actividadRemedial,
+          medSugeridos,
+          auditoria,
+        ]
       properties:
         id: { type: string }
         planeacionId: { type: string }
         actividadId: { type: string }
         estado:
           { type: string, enum: [borrador, revisado, aprobado, descartado] }
-        diff:
+        cambiosSecuencia:
           type: array
-          items: { $ref: "#/components/schemas/DiffItem" }
+          items: { $ref: "#/components/schemas/CambioSecuencia" }
+        actividadRemedial: { $ref: "#/components/schemas/ActividadRemedial" }
+        medSugeridos:
+          type: array
+          description: Vacío hasta que buscar_med (MCP) lo llene.
+          items: { $ref: "#/components/schemas/MedSugerido" }
         auditoria:
           type: object
           required: [creadoEn, editadoRespectoOriginal]

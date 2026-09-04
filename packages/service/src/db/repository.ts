@@ -15,9 +15,19 @@ export interface Planeacion {
   grupoId: string;
   cicloEscolarId: string;
   campoFormativo: string;
-  pda: string;
+  pdas: string[];
   titulo: string;
   nTotalGrupo: number;
+}
+
+/** Una llamada a Claude. Sin PII: solo modelo, tokens y costo. */
+export interface UsageLlm {
+  modelo: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costoUsd: number;
 }
 
 /**
@@ -30,6 +40,8 @@ export interface Repository {
   savePropuesta(propuesta: AjustePlaneacion): Promise<void>;
   /** `ref` es el id de la propuesta o el actividadId (en v1 son 1:1). */
   getPropuesta(ref: string): Promise<AjustePlaneacion | null>;
+  logUsage(usage: UsageLlm): Promise<void>;
+  getUsage(): Promise<UsageLlm[]>;
   createJob(input: ResultadoActividadInput): Promise<JobProgreso>;
   getJob(jobId: string): Promise<JobProgreso | null>;
   updateJob(job: JobProgreso): Promise<void>;

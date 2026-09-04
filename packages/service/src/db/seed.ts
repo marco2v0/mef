@@ -3,13 +3,15 @@ import type { AjustePlaneacion } from "../schemas/ajuste-planeacion.js";
 import type { ResultadoAlumno } from "../schemas/resultado-alumno.js";
 import type { Planeacion } from "./repository.js";
 
+const PDA_MOCK = "F3.LEN.02.1";
+
 export const PLANEACION_MOCK: Planeacion = {
   planeacionId: "PLAN-001",
   actividadId: "ACT-001",
   grupoId: "GRP-001",
   cicloEscolarId: "CE-2025-2026",
   campoFormativo: "Lenguajes",
-  pda: "F3.LEN.02.1",
+  pdas: [PDA_MOCK],
   titulo: "Lectura en voz alta y comprensión de textos narrativos",
   nTotalGrupo: 12,
 };
@@ -50,19 +52,25 @@ export const PROPUESTA_MOCK: AjustePlaneacion = {
   planeacionId: PLANEACION_MOCK.planeacionId,
   actividadId: PLANEACION_MOCK.actividadId,
   estado: "borrador",
-  diff: [
+  cambiosSecuencia: [
     {
       tipo: "agregar",
       descripcion:
         "Agregar actividad remedial de 20 min de lectura guiada en parejas",
-      pdaRelacionado: PLANEACION_MOCK.pda,
+      pdaRelacionado: PDA_MOCK,
     },
     {
       tipo: "mantener",
       descripcion: "Conservar la lectura en voz alta como cierre de sesión",
-      pdaRelacionado: PLANEACION_MOCK.pda,
+      pdaRelacionado: PDA_MOCK,
     },
   ],
+  actividadRemedial: {
+    descripcion: "Lectura guiada en parejas con textos de 3-4 líneas",
+    duracionMin: 20,
+    pdaObjetivo: PDA_MOCK,
+  },
+  medSugeridos: [],
   auditoria: {
     creadoEn: "2026-09-01T12:00:00.000Z",
     editadoRespectoOriginal: false,

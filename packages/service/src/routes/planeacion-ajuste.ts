@@ -23,7 +23,7 @@ planeacionAjusteRoutes.get("/:ref", async (c) => {
 
 /**
  * POST /v1/planeacion-ajuste/{id}/aprobar — nunca se auto-aplica: la aprueba
- * el docente. El body opcional trae sus ediciones sobre el diff; si difieren
+ * el docente. El body opcional trae sus ediciones sobre la secuencia; si difieren
  * del original, queda registrado en editadoRespectoOriginal (SPEC §10).
  */
 planeacionAjusteRoutes.post("/:id/aprobar", async (c) => {
@@ -41,16 +41,20 @@ planeacionAjusteRoutes.post("/:id/aprobar", async (c) => {
   }
 
   const crudo = await c.req.text();
-  const { diff: diffEditado } = crudo
+  const { cambiosSecuencia: editados, medSugeridos } = crudo
     ? AprobarBody.parse(JSON.parse(crudo))
     : {};
+  const cambio = (editado: unknown, original: unknown) =>
+    editado !== undefined &&
+    JSON.stringify(editado) !== JSON.stringify(original);
   const editado =
-    diffEditado !== undefined &&
-    JSON.stringify(diffEditado) !== JSON.stringify(propuesta.diff);
+    cambio(editados, propuesta.cambiosSecuencia) ||
+    cambio(medSugeridos, propuesta.medSugeridos);
 
   const aprobada: AjustePlaneacion = {
     ...propuesta,
-    diff: diffEditado ?? propuesta.diff,
+    cambiosSecuencia: editados ?? propuesta.cambiosSecuencia,
+    medSugeridos: medSugeridos ?? propuesta.medSugeridos,
     estado: "aprobado",
     auditoria: {
       ...propuesta.auditoria,

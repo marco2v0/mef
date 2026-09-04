@@ -85,17 +85,26 @@ interface ResultadoAlumnoPseudonimizado {
   };
 }
 
-// Salida por alumno
-interface FeedbackAlumno {
+// Salida por alumno: una entrada por alumno del lote, discriminada por estado
+type EntradaRetroalimentacion =
+  RetroalimentacionGenerada | RetroalimentacionSinDatos;
+
+interface RetroalimentacionGenerada {
   alias: string;
-  estado: "generado" | "sinDatos" | "requiereRevision";
-  retroalimentacion?: string; // texto formativo, editable por el docente en UI
-  pdaInferidos?: Array<{
-    pda: string;
-    nivel: "logrado" | "enProceso" | "noLogrado";
-  }>;
-  adecuacionAplicada: boolean;
-  intentos: number; // para requiereRevision tras fallos repetidos
+  estado: "generado";
+  pdaReferidos: string[]; // ids de la planeación; se validan en código, ver §6
+  logros: string;
+  brecha: string;
+  siguientePaso: string;
+  texto: string; // formativo, máximo 120 palabras, editable por el docente en UI
+  requiereRevision: boolean; // true si citó PDA ajenos incluso tras el reintento
+}
+
+// Alumno ausente: aparece para que el docente lo vea, sin texto. No se le
+// llama a Claude ni se le inventa evidencia (el campo `texto` no existe acá).
+interface RetroalimentacionSinDatos {
+  alias: string;
+  estado: "sinDatos";
 }
 
 // Análisis grupal
@@ -106,11 +115,14 @@ interface AnalisisBrechas {
   nTotalGrupo: number;
   datosInsuficientes: boolean; // true si falta > 30% del grupo (umbral configurable)
   umbralMinimoNParaCerteza: number; // default 8
-  brechas: Array<{
+  confianza: "alta" | "baja"; // "baja" si n < umbralMinimoNParaCerteza
+  pdaNoLogrados: Array<{
     pda: string;
-    porcentajeNoLogrado: number;
-    confianza: "alta" | "baja"; // "baja" si n < umbralMinimoNParaCerteza
+    porcentaje: number; // sobre los n con datos, no sobre nTotalGrupo
+    patron: string; // error común observado, ej. "confunden un detalle con la idea central"
   }>;
+  fortalezas: string[]; // del grupo; nunca nombra alumnos
+  recomendacionGeneral: string;
   flagsSospecha?: Array<{
     alumnos: string[]; // aliases involucrados
     alcance: "individual" | "grupoCompleto"; // grupoCompleto => posible falla del instrumento, no de alumnos
@@ -124,12 +136,17 @@ interface PropuestaAjustePlaneacion {
   planeacionId: string;
   actividadId: string;
   estado: "borrador" | "revisado" | "aprobado" | "descartado";
-  diff: Array<{
+  cambiosSecuencia: Array<{
     tipo: "agregar" | "modificar" | "mantener";
     descripcion: string; // ej. "agregar actividad remedial de 20 min sobre F3.LEN.02.1"
     pdaRelacionado?: string;
-    medSugerido?: MedSugerido;
   }>;
+  actividadRemedial: {
+    descripcion: string;
+    duracionMin: number;
+    pdaObjetivo: string;
+  };
+  medSugeridos: MedSugerido[]; // vacío hasta que buscar_med (MCP) lo llene, ver §8
   auditoria: {
     creadoEn: string;
     aprobadoPor?: string; // docenteId
@@ -145,13 +162,16 @@ interface MedSugerido {
   url?: string;
 }
 
-// Job asíncrono
+// Job asíncrono. Es también el sobre de resultados: el polling lee de acá.
 interface JobProgreso {
   jobId: string;
   estado: "encolado" | "procesando" | "completado" | "error";
-  total: number;
+  total: number; // solo alumnos presentes
   completados: number;
   requierenRevision: string[]; // aliases que fallaron 2x
+  retroalimentaciones?: EntradaRetroalimentacion[]; // parcial mientras procesa
+  brechas?: AnalisisBrechas; // al cerrar el lote
+  ajuste?: PropuestaAjustePlaneacion; // después de brechas
 }
 ```
 
@@ -183,8 +203,8 @@ Un lote de resultados (ej. 30 alumnos) se procesa así:
 
 ## 8. Integración MCP — catálogo de MED
 
-- Flujo de dos fases: (1) Claude genera retroalimentación individual y la propuesta de ajuste de planeación; (2) por separado, se invoca el tool MCP `buscar_med` (async) para obtener candidatos reales del catálogo; (3) los resultados se combinan en `PropuestaAjustePlaneacion.diff[].medSugerido` antes de mostrarse al docente.
-- **Anti-alucinación**: `medSugerido` se valida en código contra el resultado real devuelto por la llamada a `buscar_med` en esa misma sesión — nunca se acepta un MED que no venga de esa respuesta. Si `buscar_med` no devuelve nada, el campo `medSugerido` queda ausente; el sistema **no inventa** un MED para no dejar el campo vacío.
+- Flujo de dos fases: (1) Claude genera retroalimentación individual y la propuesta de ajuste de planeación; (2) por separado, se invoca el tool MCP `buscar_med` (async) para obtener candidatos reales del catálogo; (3) los resultados se combinan en `PropuestaAjustePlaneacion.medSugeridos` antes de mostrarse al docente.
+- **Anti-alucinación**: cada entrada de `medSugeridos` se valida en código contra el resultado real devuelto por la llamada a `buscar_med` en esa misma sesión — nunca se acepta un MED que no venga de esa respuesta. Si `buscar_med` no devuelve nada, `medSugeridos` queda vacío; el sistema **no inventa** un MED para no dejar el campo vacío.
 
 ## 9. Retención de datos
 
@@ -208,7 +228,7 @@ Mínimo no negociable:
 | Riesgo                                                          | Mitigación                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sobreconfianza docente / reemplazo de juicio pedagógico         | Todo output (feedback individual, brechas, ajuste de planeación) se presenta como propuesta editable con estados `borrador → revisado → aprobado`, nunca como veredicto final. Tasa de edición trackeada (§10).                                          |
-| Alucinación de MED inexistente                                  | `medSugerido` solo desde resultados reales de `buscar_med` (§8); nunca inventado.                                                                                                                                                                        |
+| Alucinación de MED inexistente                                  | `medSugeridos` solo desde resultados reales de `buscar_med` (§8); nunca inventado.                                                                                                                                                                       |
 | Exposición de PII de menores fuera del perímetro pseudonimizado | Auditoría explícita de cada punto de logging (app, MCP, Claude, error tracking); solo el alias se registra. Se prueba intentando loggear un dato real y verificando que quede bloqueado también en logs, no solo en el código fuente que arma el prompt. |
 | Sesgo por bajo N (grupos pequeños/escuelas rurales)             | Umbral `n ≥ 8` antes de reportar brecha con lenguaje de certeza; por debajo, se reporta con `confianza: "baja"` y lenguaje cauteloso, nunca se omite (§6).                                                                                               |
 
@@ -275,15 +295,15 @@ docs/
 
 ## 14. Contrato de API (resumen)
 
-| Endpoint                                                   | Método | Descripción                                                                              |
-| ---------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
-| `/v1/retroalimentacion`                                    | POST   | Recibe `ResultadoActividadInput`, tokeniza, encola job. Devuelve `{ jobId, estado }`.    |
-| `/v1/retroalimentacion/{jobId}`                            | GET    | Devuelve `JobProgreso`; si `completado`, incluye `FeedbackAlumno[]` y `AnalisisBrechas`. |
-| `/v1/retroalimentacion/{jobId}/alumnos/{alias}/reintentar` | POST   | Reintenta un alumno puntual marcado `requiereRevision`.                                  |
-| `/v1/planeacion-ajuste/{actividadId}`                      | GET    | Devuelve `PropuestaAjustePlaneacion` en su estado actual.                                |
-| `/v1/planeacion-ajuste/{id}/aprobar`                       | POST   | Body opcional con ediciones; marca `aprobado`, registra auditoría.                       |
-| `/v1/planeacion-ajuste/{id}/descartar`                     | POST   | Marca `descartado`.                                                                      |
-| `/v1/health`                                               | GET    | Liveness/readiness.                                                                      |
+| Endpoint                                                   | Método | Descripción                                                                           |
+| ---------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| `/v1/retroalimentacion`                                    | POST   | Recibe `ResultadoActividadInput`, tokeniza, encola job. Devuelve `{ jobId, estado }`. |
+| `/v1/retroalimentacion/{jobId}`                            | GET    | Devuelve `JobProgreso`, que ya trae `retroalimentaciones`, `brechas` y `ajuste`.      |
+| `/v1/retroalimentacion/{jobId}/alumnos/{alias}/reintentar` | POST   | Reintenta un alumno puntual marcado `requiereRevision`.                               |
+| `/v1/planeacion-ajuste/{actividadId}`                      | GET    | Devuelve `PropuestaAjustePlaneacion` en su estado actual.                             |
+| `/v1/planeacion-ajuste/{id}/aprobar`                       | POST   | Body opcional con ediciones; marca `aprobado`, registra auditoría.                    |
+| `/v1/planeacion-ajuste/{id}/descartar`                     | POST   | Marca `descartado`.                                                                   |
+| `/v1/health`                                               | GET    | Liveness/readiness.                                                                   |
 
 Todos los endpoints (excepto `/health`) requieren `Authorization: Bearer <JWT>` y aplican la verificación de `grupoId ∈ grupoIds` (§7). El contrato completo vive en `packages/mef-service/src/openapi/mef.openapi.yaml`.
 
@@ -296,10 +316,10 @@ Pasos concretos para validar que el módulo funciona integrado, antes de conside
 3. **Captura**: `POST /v1/retroalimentacion` con resultados de los 10 alumnos (incluyendo el ausente sin score, y dos alumnos con respuestas idénticas a propósito). Confirmar respuesta inmediata `{ jobId, estado: "procesando" }`.
 4. **Pseudonimización**: inspeccionar logs de la corrida completa (app, llamadas a Claude, llamadas MCP) y confirmar que **no aparece** ningún `alumnoId` real, nombre, CURP o correo — solo alias `A-NN`.
 5. **Progreso**: hacer polling a `GET /v1/retroalimentacion/{jobId}` y confirmar que el contador avanza (ej. "6/9 completados", el ausente no cuenta) hasta `completado`.
-6. **Resultados individuales**: confirmar que el alumno ausente aparece con `estado: "sinDatos"` (no con feedback inventado), que el alumno con adecuación tiene `adecuacionAplicada: true`, y que el flag de sospecha aparece para el par de respuestas idénticas con `alcance: "individual"`.
+6. **Resultados individuales**: confirmar que el alumno ausente aparece con `estado: "sinDatos"` (no con feedback inventado), que el alumno con adecuación tiene su criterio ajustado reflejado en el `texto`, y que el flag de sospecha aparece para el par de respuestas idénticas con `alcance: "individual"`.
 7. **Brechas grupales**: confirmar que `AnalisisBrechas.n` excluye al ausente, y que con `n < 8` el resultado trae `confianza: "baja"` en cada brecha reportada (con 9 presentes de 10, ajustar el escenario de prueba para cruzar el umbral en ambos sentidos si se quiere probar los dos casos).
-8. **Propuesta de ajuste**: confirmar que se generó una `PropuestaAjustePlaneacion` en estado `borrador`, con al menos un `medSugerido` cuya `fuente` sea `"mcp-buscar_med"` — y por separado, simular que `buscar_med` no devuelve resultados y confirmar que el diff correspondiente **no** trae `medSugerido` inventado.
-9. **Aprobación y auditoría**: aprobar la propuesta sin editar vía `POST /v1/planeacion-ajuste/{id}/aprobar`; confirmar que `auditoria.aprobadoPor`, `aprobadoEn` quedan registrados y `editadoRespectoOriginal: false`. Repetir editando el diff antes de aprobar y confirmar `editadoRespectoOriginal: true`.
+8. **Propuesta de ajuste**: confirmar que se generó una `PropuestaAjustePlaneacion` en estado `borrador`, con al menos un `medSugeridos[]` cuya `fuente` sea `"mcp-buscar_med"` — y por separado, simular que `buscar_med` no devuelve resultados y confirmar que `medSugeridos` queda vacío y **no** trae un MED inventado.
+9. **Aprobación y auditoría**: aprobar la propuesta sin editar vía `POST /v1/planeacion-ajuste/{id}/aprobar`; confirmar que `auditoria.aprobadoPor`, `aprobadoEn` quedan registrados y `editadoRespectoOriginal: false`. Repetir editando `cambiosSecuencia` antes de aprobar y confirmar `editadoRespectoOriginal: true`.
 10. **Recuperación de sesión**: a mitad del job (paso 5), simular cierre/recarga de la pestaña del docente; confirmar que al volver a abrir con el mismo `jobId` (desde localStorage) el progreso se recupera sin reiniciar el procesamiento server-side.
 11. **Retención**: simular cierre de `cicloEscolarId` y confirmar que el job de purga elimina el mapeo alias↔alumno y los datos asociados a ese ciclo.
 12. **Expiración de sesión**: con un job en progreso o una propuesta sin aprobar, forzar la expiración del JWT (ej. usando uno con `exp` ya vencido) y hacer un request. Confirmar `401` explícito, y confirmar que la isla React preserva cualquier edición no guardada antes de redirigir a re-autenticación.
@@ -342,8 +362,8 @@ Ya definido en §5: un alumno que falla 2 veces queda `requiereRevision: true` *
 ### 16.3 Fallos de dependencias externas (Claude, MCP)
 
 - **Claude devuelve output que no valida contra el schema** (`packages/service/src/schemas/`): se trata como fallo del alumno puntual (§16.2), nunca se acepta un output parcialmente válido ni se "arregla" el JSON a mano.
-- **Claude o `buscar_med` no responden / timeout**: reintento simple, 2 intentos con delay fijo antes de marcar `requiereRevision` (alumno) o dejar `medSugerido` ausente (§8). **[ponytail]** delay fijo, no backoff exponencial ni circuit breaker — el volumen esperado (lotes por grupo) no lo justifica; escalar si aparecen fallos en cascada que un retry simple no absorbe.
-- Ningún fallo de `buscar_med` es fatal para el job: la ausencia de `medSugerido` es un estado válido (§8), no un error.
+- **Claude o `buscar_med` no responden / timeout**: reintento simple, 2 intentos con delay fijo antes de marcar `requiereRevision` (alumno) o dejar `medSugeridos` vacío (§8). **[ponytail]** delay fijo, no backoff exponencial ni circuit breaker — el volumen esperado (lotes por grupo) no lo justifica; escalar si aparecen fallos en cascada que un retry simple no absorbe.
+- Ningún fallo de `buscar_med` es fatal para el job: un `medSugeridos` vacío es un estado válido (§8), no un error.
 
 ### 16.4 Logging de errores
 

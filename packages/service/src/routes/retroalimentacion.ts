@@ -2,14 +2,20 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app.js";
 import { fail } from "../errors.js";
 import { Alias, ResultadoActividadInput } from "../schemas/index.js";
+import { procesarJob } from "../worker.js";
 
 export const retroalimentacionRoutes = new Hono<AppEnv>();
 
 /** POST /v1/retroalimentacion — encola el lote y responde de inmediato. */
 retroalimentacionRoutes.post("/", async (c) => {
   const input = ResultadoActividadInput.parse(await c.req.json());
-  const job = await c.get("repo").createJob(input);
-  // STUB: falta el worker (cliente Claude). El job queda en "encolado".
+  const repo = c.get("repo");
+  const job = await repo.createJob(input);
+  // Sin await a propósito: el docente recibe el jobId ya y sigue el avance por
+  // GET. procesarJob persiste su propio estado, incluso al fallar.
+  void procesarJob(repo, job, input).catch((err: unknown) => {
+    console.error({ jobId: job.jobId, err });
+  });
   return c.json({ jobId: job.jobId, estado: job.estado }, 202);
 });
 
@@ -18,7 +24,7 @@ retroalimentacionRoutes.get("/:jobId", async (c) => {
   const job = await c.get("repo").getJob(c.req.param("jobId"));
   if (!job)
     return fail(c, 404, "NO_ENCONTRADO", "El job solicitado no existe.");
-  // STUB: cuando estado sea "completado" se agregan Retroalimentacion[] y AnalisisBrechas.
+  // STUB: falta AnalisisBrechas; las retroalimentaciones ya vienen en el job.
   return c.json(job);
 });
 

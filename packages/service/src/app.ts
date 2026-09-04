@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { ZodError } from "zod";
+import { setUsageSink } from "./claude/client.js";
 import type { Repository } from "./db/repository.js";
 import { fail } from "./errors.js";
 import { planeacionAjusteRoutes } from "./routes/planeacion-ajuste.js";
@@ -20,6 +21,9 @@ export interface AppEnv {
  * cualquier docente. Es un pendiente asumido, no un olvido. No desplegar así.
  */
 export function createApp(repo: Repository) {
+  // Todo lo que gaste tokens en este proceso queda en llm_usage.
+  setUsageSink((usage) => repo.logUsage(usage));
+
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {

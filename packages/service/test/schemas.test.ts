@@ -4,6 +4,8 @@ import {
   AnalisisBrechas,
   JobProgreso,
   Retroalimentacion,
+  RetroalimentacionGenerada,
+  EntradaRetroalimentacion,
   ResultadoAlumno,
 } from "../src/schemas/index.js";
 
@@ -40,27 +42,53 @@ describe("ResultadoAlumno", () => {
 });
 
 describe("Retroalimentacion", () => {
-  it("acepta sinDatos sin texto", () => {
+  const base = {
+    alias: "A-01",
+    pdaReferidos: ["F3.LEN.02.1"],
+    logros: "Identificaste la idea principal en dos textos.",
+    brecha: "Todavía confundís un detalle con la idea central.",
+    siguientePaso: "Subrayá de qué trata cada oración antes de responder.",
+    texto: "Reconociste la idea principal en dos de los tres textos.",
+  };
+
+  it("acepta una retroalimentación válida", () => {
+    expect(Retroalimentacion.safeParse(base).success).toBe(true);
+  });
+
+  it("rechaza un texto de más de 120 palabras", () => {
+    const largo = { ...base, texto: "palabra ".repeat(121).trim() };
+    expect(Retroalimentacion.safeParse(largo).success).toBe(false);
     expect(
       Retroalimentacion.safeParse({
-        alias: "A-07",
-        estado: "sinDatos",
-        adecuacionAplicada: false,
-        intentos: 0,
+        ...base,
+        texto: "palabra ".repeat(120).trim(),
       }).success,
     ).toBe(true);
   });
 
-  it("rechaza un nivel de PDA fuera del enum", () => {
+  it("rechaza pdaReferidos vacío", () => {
     expect(
-      Retroalimentacion.safeParse({
-        alias: "A-01",
+      Retroalimentacion.safeParse({ ...base, pdaReferidos: [] }).success,
+    ).toBe(false);
+  });
+
+  it("RetroalimentacionGenerada exige estado y requiereRevision", () => {
+    expect(RetroalimentacionGenerada.safeParse(base).success).toBe(false);
+    expect(
+      RetroalimentacionGenerada.safeParse({
+        ...base,
         estado: "generado",
-        retroalimentacion: "Buen avance en la lectura.",
-        pdaInferidos: [{ pda: "F3.LEN.02.1", nivel: "casiLogrado" }],
-        adecuacionAplicada: false,
-        intentos: 1,
+        requiereRevision: false,
       }).success,
+    ).toBe(true);
+  });
+
+  it("un ausente entra como sinDatos, sin texto", () => {
+    const ausente = { alias: "A-07", estado: "sinDatos" };
+    expect(EntradaRetroalimentacion.safeParse(ausente).success).toBe(true);
+    // sinDatos nunca lleva texto ni PDA: si viene, es una retro inventada.
+    expect(
+      EntradaRetroalimentacion.safeParse({ ...ausente, texto: "algo" }).success,
     ).toBe(false);
   });
 });
@@ -73,33 +101,34 @@ describe("AnalisisBrechas", () => {
     nTotalGrupo: 12,
     datosInsuficientes: false,
     umbralMinimoNParaCerteza: 8,
-    brechas: [
-      { pda: "F3.LEN.02.1", porcentajeNoLogrado: 36.4, confianza: "alta" },
+    confianza: "alta",
+    pdaNoLogrados: [
+      {
+        pda: "F3.LEN.02.1",
+        porcentaje: 36.4,
+        patron: "Confunden un detalle con la idea central",
+      },
     ],
+    fortalezas: ["Localizan información explícita en el texto"],
+    recomendacionGeneral: "Trabajar la idea principal con textos cortos.",
   };
 
   it("acepta un análisis válido", () => {
     expect(AnalisisBrechas.safeParse(base).success).toBe(true);
   });
 
-  it("rechaza porcentajeNoLogrado fuera de 0..100", () => {
+  it("rechaza porcentaje fuera de 0..100", () => {
     const fuera = {
       ...base,
-      brechas: [
-        { pda: "F3.LEN.02.1", porcentajeNoLogrado: 140, confianza: "alta" },
-      ],
+      pdaNoLogrados: [{ ...base.pdaNoLogrados[0], porcentaje: 140 }],
     };
     expect(AnalisisBrechas.safeParse(fuera).success).toBe(false);
   });
 
   it("rechaza una confianza fuera de alta|baja", () => {
-    const rara = {
-      ...base,
-      brechas: [
-        { pda: "F3.LEN.02.1", porcentajeNoLogrado: 36.4, confianza: "media" },
-      ],
-    };
-    expect(AnalisisBrechas.safeParse(rara).success).toBe(false);
+    expect(
+      AnalisisBrechas.safeParse({ ...base, confianza: "media" }).success,
+    ).toBe(false);
   });
 
   it("acepta flagsSospecha con alcance grupoCompleto", () => {
@@ -123,27 +152,29 @@ describe("AjustePlaneacion", () => {
     planeacionId: "PLAN-001",
     actividadId: "ACT-001",
     estado: "borrador",
-    diff: [{ tipo: "agregar", descripcion: "Actividad remedial de 20 min" }],
+    cambiosSecuencia: [
+      { tipo: "agregar", descripcion: "Actividad remedial de 20 min" },
+    ],
+    actividadRemedial: {
+      descripcion: "Lectura guiada en parejas",
+      duracionMin: 20,
+      pdaObjetivo: "F3.LEN.02.1",
+    },
+    medSugeridos: [],
     auditoria: {
       creadoEn: "2026-09-01T12:00:00.000Z",
       editadoRespectoOriginal: false,
     },
   };
 
-  it("acepta un diff sin medSugerido", () => {
+  it("acepta una propuesta sin MED", () => {
     expect(AjustePlaneacion.safeParse(base).success).toBe(true);
   });
 
   it("solo acepta medSugerido con fuente mcp-buscar_med", () => {
     const conMed = (fuente: string) => ({
       ...base,
-      diff: [
-        {
-          tipo: "agregar",
-          descripcion: "Actividad remedial de 20 min",
-          medSugerido: { medId: "MED-9", titulo: "Lectura guiada", fuente },
-        },
-      ],
+      medSugeridos: [{ medId: "MED-9", titulo: "Lectura guiada", fuente }],
     });
     expect(AjustePlaneacion.safeParse(conMed("mcp-buscar_med")).success).toBe(
       true,

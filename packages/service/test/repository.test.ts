@@ -91,10 +91,13 @@ describe("propuestas", () => {
     expect(await repo.getPropuesta("ACT-INEXISTENTE")).toBeNull();
   });
 
-  it("rechaza una segunda propuesta para la misma actividad", async () => {
-    await expect(
-      repo.savePropuesta({ ...PROPUESTA_MOCK, id: "PROP-002" }),
-    ).rejects.toThrow(/UNIQUE/i);
+  it("una propuesta nueva reemplaza a la vigente de esa actividad", async () => {
+    await repo.savePropuesta({ ...PROPUESTA_MOCK, id: "PROP-002" });
+
+    const vigente = await repo.getPropuesta(PROPUESTA_MOCK.actividadId);
+    expect(vigente?.id).toBe("PROP-002");
+    // La actividad sigue teniendo una sola: la anterior ya no se recupera.
+    expect(await repo.getPropuesta("PROP-001")).toBeNull();
   });
 });
 

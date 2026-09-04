@@ -280,3 +280,75 @@ revisable en el PR, como fuente única de rutas, shapes y taxonomía de errores
 divergencias contrato/código se vuelven hallazgos citables (auth declarada y no
 implementada, `ref` ambiguo en ADR-001); el costo es mantener dos fuentes —YAML
 y Zod— que hay que revisar juntas en cada cambio de endpoint.
+
+---
+
+## ADR-007 — Renombres en AnalisisBrechas y AjustePlaneacion
+
+**Fecha:** 2026-09-04
+
+**Contexto:** al implementar `generarBrechas` y `generarAjuste` (Sesión 3), las
+interfaces de `SPEC.md` §4 quedaron cortas respecto de lo que las funciones
+tienen que producir y de lo que el docente necesita leer. Tres nombres del
+diseño original describían la forma del dato, no su significado pedagógico, y
+mantenerlos habría forzado campos duplicados.
+
+**Decisión:** tres renombres, con `SPEC.md` §4 y `openapi.yaml` actualizados
+para coincidir con el código:
+
+1. **`brechas` → `pdaNoLogrados`.** El nombre viejo repetía el de la interfaz
+   (`AnalisisBrechas.brechas`) sin decir nada; el nuevo nombra la unidad real
+   del análisis. Cada entrada gana `patron` —el error común observado— que es
+   lo que vuelve accionable la brecha: un porcentaje solo dice cuántos, no qué
+   hacer. `porcentajeNoLogrado` pasó a `porcentaje` porque el "no logrado" ya
+   está en el nombre del arreglo.
+
+2. **`confianza` sube de la brecha al análisis.** Se deriva únicamente de `n`
+   contra `umbralMinimoNParaCerteza`, así que por PDA repetía el mismo valor en
+   cada entrada e invitaba a leerla como una propiedad de esa brecha en
+   particular. Al nivel del análisis queda claro que califica la muestra, no el
+   hallazgo.
+
+3. **`diff` → `cambiosSecuencia`, más `actividadRemedial`.** "Diff" es
+   vocabulario de control de versiones: describe la forma (una lista de altas,
+   bajas y cambios) y no el objeto, que es la secuencia didáctica de la
+   siguiente sesión. La actividad remedial se separó del arreglo porque es una
+   sola, con duración y PDA objetivo propios, y el docente la lee como una
+   pieza aparte del ajuste a la secuencia.
+
+4. **`medSugerido` por ítem → `medSugeridos` a nivel raíz.** El MED se buscaba
+   por cambio, pero el catálogo se consulta una vez por propuesta y un mismo
+   MED puede servir a varios cambios. Con el campo anidado, la validación
+   anti-alucinación de §8 tenía que recorrer el arreglo y el mismo MED podía
+   quedar repetido con distinta `fuente`. A nivel raíz hay un solo lugar donde
+   validar contra el resultado real de `buscar_med`.
+
+5. **`FeedbackAlumno` → `EntradaRetroalimentacion`, unión discriminada por
+   `estado`.** El diseño original mezclaba en una sola interfaz al alumno con
+   retroalimentación y al ausente, dejando `retroalimentacion?` opcional: el
+   tipo permitía un `sinDatos` con texto, que es justo lo que la regla de "no
+   inventar evidencia" prohíbe. Partido en dos variantes, un ausente ni
+   siquiera tiene dónde poner un texto (la variante es `strict`, ver
+   `schemas/retroalimentacion.ts`). De paso, `pdaInferidos[{pda, nivel}]` pasó
+   a `pdaReferidos: string[]`: el nivel por PDA nunca se usó —el nivel real lo
+   comunica el texto formativo— y `requiereRevision` salió del enum de `estado`
+   para volverse un booleano, porque es ortogonal: una retro puede estar
+   generada y aun así necesitar revisión docente. `adecuacionAplicada` e
+   `intentos` se fueron: el primero era un booleano que no cambiaba ninguna
+   decisión (la adecuación ya se refleja en el texto) y el segundo era
+   contabilidad interna del reintento, no algo que el docente lea.
+
+6. **`JobProgreso` es también el sobre de resultados.** El diseño lo pensaba
+   como puro progreso (`total`, `completados`) con los resultados servidos
+   aparte, pero el polling de la isla React pega a un solo endpoint y no había
+   dónde guardarlos: `retroalimentaciones`, `brechas` y `ajuste` viven ahora en
+   el job, opcionales porque se llenan por etapas —las retros parciales mientras
+   procesa, brechas y ajuste al cerrar el lote—. Evita una tabla y un endpoint
+   extra para algo que el cliente pide siempre junto.
+
+**Consecuencia:** `SPEC.md` §4, §8, §14 y §15, `openapi.yaml`, los schemas Zod,
+el seed y los tests hablan el mismo idioma, y la validación de MED quedó en un
+único punto. El costo es una migración de nombres que toca la ruta de aprobación
+(`AprobarBody` ahora recibe `cambiosSecuencia` y `medSugeridos`) y que
+`packages/ui` tendrá que absorber; como ningún consumidor está en producción
+todavía, no hay compatibilidad hacia atrás que sostener.

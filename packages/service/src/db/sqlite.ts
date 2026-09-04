@@ -6,7 +6,7 @@ import type {
   ResultadoActividadInput,
   ResultadoAlumno,
 } from "../schemas/resultado-alumno.js";
-import type { Planeacion, Repository } from "./repository.js";
+import type { Planeacion, Repository, UsageLlm } from "./repository.js";
 import { seed } from "./seed.js";
 
 const ESQUEMA = `
@@ -26,6 +26,16 @@ CREATE TABLE IF NOT EXISTS propuestas (
   -- getPropuesta(actividadId) devuelve una fila arbitraria.
   actividad_id TEXT NOT NULL UNIQUE,
   data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  creado_en TEXT NOT NULL,
+  modelo TEXT NOT NULL,
+  input INTEGER NOT NULL,
+  output INTEGER NOT NULL,
+  cache_read INTEGER NOT NULL,
+  cache_write INTEGER NOT NULL,
+  costo_usd REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS jobs (
   job_id TEXT PRIMARY KEY,
@@ -75,8 +85,12 @@ export class SqliteRepository implements Repository {
   async savePropuesta(propuesta: AjustePlaneacion): Promise<void> {
     this.db
       .prepare(
+        // Dos conflictos posibles: la misma propuesta (id) o una propuesta
+        // nueva para una actividad que ya tenía una. En ambos casos se pisa:
+        // la actividad tiene a lo sumo una propuesta vigente.
         `INSERT INTO propuestas (id, actividad_id, data) VALUES (?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET actividad_id = excluded.actividad_id, data = excluded.data`,
+         ON CONFLICT(id) DO UPDATE SET actividad_id = excluded.actividad_id, data = excluded.data
+         ON CONFLICT(actividad_id) DO UPDATE SET id = excluded.id, data = excluded.data`,
       )
       .run(propuesta.id, propuesta.actividadId, JSON.stringify(propuesta));
   }
@@ -88,6 +102,34 @@ export class SqliteRepository implements Repository {
       )
       .get(ref, ref) as FilaData | undefined;
     return fila ? (JSON.parse(fila.data) as AjustePlaneacion) : null;
+  }
+
+  async logUsage(usage: UsageLlm): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO llm_usage
+           (creado_en, modelo, input, output, cache_read, cache_write, costo_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        new Date().toISOString(),
+        usage.modelo,
+        usage.input,
+        usage.output,
+        usage.cacheRead,
+        usage.cacheWrite,
+        usage.costoUsd,
+      );
+  }
+
+  async getUsage(): Promise<UsageLlm[]> {
+    return this.db
+      .prepare(
+        `SELECT modelo, input, output, cache_read AS cacheRead,
+                cache_write AS cacheWrite, costo_usd AS costoUsd
+         FROM llm_usage ORDER BY id`,
+      )
+      .all() as UsageLlm[];
   }
 
   async createJob(input: ResultadoActividadInput): Promise<JobProgreso> {

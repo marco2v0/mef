@@ -1,5 +1,10 @@
 import type { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// El worker corre fuera del request: acá se prueba solo el contrato HTTP.
+// Su comportamiento vive en retroalimentacion.test.ts.
+vi.mock("../src/worker.js", () => ({ procesarJob: vi.fn(async () => {}) }));
+
 import type { AppEnv } from "../src/app.js";
 import { createApp } from "../src/app.js";
 import { PLANEACION_MOCK, PROPUESTA_MOCK } from "../src/db/seed.js";
@@ -167,30 +172,30 @@ describe("POST /v1/planeacion-ajuste/{id}/aprobar", () => {
     expect(propuesta.estado).toBe("aprobado");
     expect(propuesta.auditoria.editadoRespectoOriginal).toBe(false);
     expect(propuesta.auditoria.aprobadoEn).toBeTruthy();
-    expect(propuesta.diff).toEqual(PROPUESTA_MOCK.diff);
+    expect(propuesta.cambiosSecuencia).toEqual(PROPUESTA_MOCK.cambiosSecuencia);
   });
 
-  it("aplica el diff editado y marca editadoRespectoOriginal", async () => {
-    const diffEditado = [
+  it("aplica la secuencia editada y marca editadoRespectoOriginal", async () => {
+    const editados = [
       { tipo: "modificar", descripcion: "Remedial de 30 min en vez de 20" },
     ];
     const res = await post(
       `/v1/planeacion-ajuste/${PROPUESTA_MOCK.id}/aprobar`,
-      JSON.stringify({ diff: diffEditado }),
+      JSON.stringify({ cambiosSecuencia: editados }),
     );
     expect(res.status).toBe(200);
     const propuesta = (await res.json()) as AjustePlaneacion;
-    expect(propuesta.diff).toEqual(diffEditado);
+    expect(propuesta.cambiosSecuencia).toEqual(editados);
     expect(propuesta.auditoria.editadoRespectoOriginal).toBe(true);
-    expect((await repo.getPropuesta(PROPUESTA_MOCK.id))?.diff).toEqual(
-      diffEditado,
-    );
+    expect(
+      (await repo.getPropuesta(PROPUESTA_MOCK.id))?.cambiosSecuencia,
+    ).toEqual(editados);
   });
 
-  it("un diff idéntico al original no cuenta como edición", async () => {
+  it("una secuencia idéntica al original no cuenta como edición", async () => {
     const res = await post(
       `/v1/planeacion-ajuste/${PROPUESTA_MOCK.id}/aprobar`,
-      JSON.stringify({ diff: PROPUESTA_MOCK.diff }),
+      JSON.stringify({ cambiosSecuencia: PROPUESTA_MOCK.cambiosSecuencia }),
     );
     const propuesta = (await res.json()) as AjustePlaneacion;
     expect(propuesta.auditoria.editadoRespectoOriginal).toBe(false);
@@ -200,13 +205,7 @@ describe("POST /v1/planeacion-ajuste/{id}/aprobar", () => {
     const res = await post(
       `/v1/planeacion-ajuste/${PROPUESTA_MOCK.id}/aprobar`,
       JSON.stringify({
-        diff: [
-          {
-            tipo: "agregar",
-            descripcion: "Video inventado",
-            medSugerido: { medId: "MED-9", titulo: "Falso", fuente: "modelo" },
-          },
-        ],
+        medSugeridos: [{ medId: "MED-9", titulo: "Falso", fuente: "modelo" }],
       }),
     );
     expect(res.status).toBe(400);
